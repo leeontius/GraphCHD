@@ -1,0 +1,1691 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GraphCHD - 先天性心臟病圖論視覺化與拓撲分析系統</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+TC:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', 'Noto Sans TC', sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+        }
+        .mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1e293b;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+        /* Animated Blood Flow Particles */
+        @keyframes flowDash {
+            to {
+                stroke-dashoffset: -24;
+            }
+        }
+        .edge-animated {
+            stroke-dasharray: 6, 6;
+            animation: flowDash 0.8s linear infinite;
+        }
+        .edge-normal {
+            transition: all 0.25s ease;
+        }
+        .vertex-node {
+            transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.2s ease;
+            cursor: pointer;
+        }
+        .vertex-node:hover {
+            filter: drop-shadow(0 0 10px rgba(56, 189, 248, 0.7));
+        }
+        /* Matrix cell styling */
+        .matrix-cell {
+            width: 24px;
+            height: 24px;
+            font-size: 11px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            user-select: none;
+            transition: all 0.12s ease;
+        }
+        .matrix-cell:hover {
+            transform: scale(1.18);
+            z-index: 10;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col selection:bg-sky-500 selection:text-white">
+
+    <!-- Top Navigation Header -->
+    <header class="bg-slate-900/90 backdrop-blur-md border-b border-slate-800 sticky top-0 z-30">
+        <div class="max-w-[1600px] mx-auto px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-4">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-rose-500 via-purple-600 to-sky-500 flex items-center justify-center shadow-lg shadow-purple-500/20">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path>
+                    </svg>
+                </div>
+                <div>
+                    <div class="flex items-center gap-2">
+                        <h1 class="text-xl font-bold tracking-tight bg-gradient-to-r from-white via-slate-100 to-sky-300 bg-clip-text text-transparent">GraphCHD</h1>
+                        <span class="text-xs px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-300 border border-sky-500/30 font-medium">Scientific Reports (2023) 13:11135</span>
+                    </div>
+                    <p class="text-xs text-slate-400">先天性心臟病圖論視覺化與拓撲矩陣分析系統 • Based on Lee & Chen (NTUH)</p>
+                </div>
+            </div>
+
+            <!-- Diagnosis Natural Language Input Bar -->
+            <div class="flex-1 max-w-2xl min-w-[280px]">
+                <form id="diagnosisForm" class="relative flex items-center">
+                    <div class="relative flex-1">
+                        <input
+                            type="text"
+                            id="diagnosisInput"
+                            placeholder="輸入 CHD 診斷或術式組合 (例: Extreme TOF + mBT, d-TGA + VSD, DORV + PDA, Fontan)..."
+                            class="w-full bg-slate-800/90 border border-slate-700 focus:border-sky-500 rounded-l-xl pl-10 pr-4 py-2 text-sm text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-sky-500 transition"
+                        >
+                        <svg class="w-4 h-4 text-slate-400 absolute left-3.5 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                        </svg>
+                    </div>
+                    <button
+                        type="submit"
+                        class="bg-sky-600 hover:bg-sky-500 active:bg-sky-700 text-white text-sm font-medium px-4 py-2 rounded-r-xl transition flex items-center gap-1.5 shadow-sm"
+                    >
+                        <span>產生圖形</span>
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                        </svg>
+                    </button>
+                </form>
+            </div>
+
+            <!-- Quick Action Buttons -->
+            <div class="flex items-center gap-2">
+                <button id="btnResetNormal" class="text-xs px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition flex items-center gap-1.5">
+                    <svg class="w-3.5 h-3.5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                    </svg>
+                    重置為正常心臟
+                </button>
+                <button id="btnPaperModal" class="text-xs px-3 py-2 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-300 border border-indigo-500/30 transition flex items-center gap-1.5">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
+                    </svg>
+                    論文理論說明
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <main class="flex-1 max-w-[1600px] w-full mx-auto px-4 sm:px-6 py-5 grid grid-cols-1 lg:grid-cols-12 gap-5">
+
+        <!-- Left Sidebar: Presets & Modular CHD Rules (Table 1 & Table 2) -->
+        <aside class="lg:col-span-3 space-y-4 flex flex-col">
+            <!-- Paper Featured Presets -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl">
+                <div class="flex items-center justify-between mb-3">
+                    <h2 class="text-sm font-semibold text-slate-200 flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full bg-sky-400"></span>
+                        論文經典案例 (Paper Presets)
+                    </h2>
+                    <span class="text-[11px] text-slate-400">Fig. 1 ~ Fig. 4</span>
+                </div>
+                <div class="grid grid-cols-1 gap-2" id="presetButtonsContainer">
+                    <!-- Populated via JS -->
+                </div>
+            </div>
+
+            <!-- Modular CHD Anomalies & Surgical Procedures Combinator -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl flex-1 flex flex-col">
+                <div class="flex items-center justify-between mb-2">
+                    <h2 class="text-sm font-semibold text-slate-200 flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full bg-rose-400"></span>
+                        病灶與術式組合器 (Table 1 & 2)
+                    </h2>
+                    <span id="activeRulesCount" class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 mono">0 項啟用</span>
+                </div>
+                <p class="text-xs text-slate-400 mb-3">勾選下方先天性心臟病分類或外科術式，即時疊加並觀察有向圖與鄰接矩陣變化：</p>
+
+                <div class="space-y-3 overflow-y-auto pr-1 max-h-[540px]" id="modularRulesContainer">
+                    <!-- Populated via JS -->
+                </div>
+            </div>
+        </aside>
+
+        <!-- Center & Right Area: Directed Graph Canvas + Survival Analysis + Adjacency Matrices -->
+        <section class="lg:col-span-9 space-y-5 flex flex-col">
+
+            <!-- Physiological Viability Banner & Active Diagnosis Summary -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div class="space-y-1 flex-1">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <span class="text-xs font-medium uppercase tracking-wider text-slate-400">目前診斷拓撲狀態:</span>
+                        <h3 id="currentDiagnosisTitle" class="text-base font-bold text-white">Normal Heart (正常心臟結構)</h3>
+                        <span id="matrixDimensionBadge" class="text-xs px-2 py-0.5 rounded bg-slate-800 text-sky-300 border border-slate-700 mono">24×24 Matrix</span>
+                    </div>
+                    <p id="currentDiagnosisDesc" class="text-xs text-slate-300 leading-relaxed">
+                        血液由上下腔靜脈 (SVC/IVC) 進入右心房室，經肺動脈至左右肺進行氣體交換，再由四條肺靜脈回流左心房室，經升主動脈與主動脈弓分支供應全身器官 (SCTO)。
+                    </p>
+                </div>
+
+                <!-- Survival Rule Checker Badge -->
+                <div id="viabilityCard" class="w-full md:w-auto min-w-[290px] rounded-xl p-3 border transition-all">
+                    <!-- Populated via JS -->
+                </div>
+            </div>
+
+            <!-- Directed Graph Visualization Card (Matching Fig. 1) -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl flex flex-col">
+                <div class="flex flex-wrap items-center justify-between gap-3 mb-3 pb-3 border-b border-slate-800/80">
+                    <div>
+                        <h2 class="text-sm font-semibold text-white flex items-center gap-2">
+                            <svg class="w-4 h-4 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"></path>
+                            </svg>
+                            心臟血液循環有向圖 (Directed Graph $G(V, E)$ — 對應論文 Figure 1 拓撲佈局)
+                        </h2>
+                        <p class="text-xs text-slate-400 mt-0.5">點擊節點可檢視解剖定義與進出邊；切換下方開關可顯示血流粒子動畫、已移除之正常連線或存活路徑。</p>
+                    </div>
+
+                    <!-- Graph Controls -->
+                    <div class="flex flex-wrap items-center gap-2">
+                        <label class="flex items-center gap-1.5 text-xs bg-slate-800/90 px-2.5 py-1.5 rounded-lg border border-slate-700 cursor-pointer select-none">
+                            <input type="checkbox" id="toggleFlowAnim" checked class="rounded text-sky-500 focus:ring-0 bg-slate-900 border-slate-600">
+                            <span class="text-slate-300">動態血流粒子</span>
+                        </label>
+                        <label class="flex items-center gap-1.5 text-xs bg-slate-800/90 px-2.5 py-1.5 rounded-lg border border-slate-700 cursor-pointer select-none">
+                            <input type="checkbox" id="toggleRemovedEdges" checked class="rounded text-sky-500 focus:ring-0 bg-slate-900 border-slate-600">
+                            <span class="text-slate-300">顯示閉鎖/移除之連線 (虛線)</span>
+                        </label>
+                        <button id="btnHighlightSurvivalPath" class="text-xs px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 transition flex items-center gap-1">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                            <span>標示循環存活路徑</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- SVG Canvas Wrapper -->
+                <div class="relative w-full bg-slate-950/90 rounded-xl border border-slate-800/90 overflow-hidden">
+                    <svg id="chdGraphSvg" viewBox="0 0 1150 560" class="w-full h-auto min-h-[380px] select-none"></svg>
+
+                    <!-- Legend Overlay -->
+                    <div class="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 bg-slate-900/90 border-t border-slate-800 text-[11px] text-slate-300">
+                        <div class="flex flex-wrap items-center gap-4">
+                            <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-sky-600 inline-block border border-sky-300"></span>體靜脈與右心 ($v_1-v_7$)</span>
+                            <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-teal-600 inline-block border border-teal-300"></span>肺部與肺靜脈 ($v_8-v_{13}$)</span>
+                            <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-rose-600 inline-block border border-rose-300"></span>左心與體動脈 ($v_{14}-v_{23}$)</span>
+                            <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-purple-600 inline-block border border-purple-300"></span>體循環器官 ($v_{24}$ SCTO)</span>
+                            <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-amber-500 inline-block border border-yellow-200"></span>新增結構/分流管 ($v_{25}$)</span>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-4">
+                            <span class="flex items-center gap-1.5"><span class="w-5 h-0.5 bg-slate-400 inline-block"></span>正常血流邊</span>
+                            <span class="flex items-center gap-1.5"><span class="w-5 h-0.5 bg-rose-500 inline-block"></span>異常/新增分流邊 ($a_{ij}=1$)</span>
+                            <span class="flex items-center gap-1.5"><span class="w-5 h-0.5 border-b border-dashed border-slate-500 inline-block"></span>閉鎖/移除之邊 ($a_{ij}=0$)</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Selected Node / Edge Inspector Bar -->
+                <div id="inspectorBar" class="mt-3 px-3.5 py-2.5 rounded-xl bg-slate-800/60 border border-slate-700/70 flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <div class="flex items-center gap-2 text-slate-300">
+                        <span class="px-2 py-0.5 rounded bg-sky-500/20 text-sky-300 font-medium mono" id="inspectorBadge">互動提示</span>
+                        <span id="inspectorText">將滑鼠移至或點擊圖中任何節點 ($v_1 \sim v_{25}$)，即可檢視其解剖名稱、血液流入來源與流出目標。</span>
+                    </div>
+                    <div id="inspectorConnections" class="text-slate-400 mono text-[11px]"></div>
+                </div>
+            </div>
+
+            <!-- Bottom Grid: Binary Adjacency Matrix (Fig. 2) & 4D Flow MRI Weighted Submatrix (Fig. 3 & 4) -->
+            <div class="grid grid-cols-1 xl:grid-cols-12 gap-5">
+
+                <!-- Binary Adjacency Matrix (7 cols) -->
+                <div class="xl:col-span-7 bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl flex flex-col">
+                    <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+                        <div>
+                            <h2 class="text-sm font-semibold text-white flex items-center gap-2">
+                                <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+                                二元鄰接矩陣 (Binary Adjacency Matrix $A=[a_{ij}]$ — Figure 2)
+                            </h2>
+                            <p class="text-xs text-slate-400 mt-0.5">
+                                <span class="text-rose-400 font-medium">紅色方框</span>代表與正常心臟矩陣不同的元素（如同論文 Fig. 2 標記）。<strong>可直接點擊任一格子 $(i,j)$ 手動切換連線！</strong>
+                            </p>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span id="matrixDiffCount" class="text-xs px-2.5 py-1 rounded-lg bg-rose-500/15 text-rose-300 border border-rose-500/30 mono">0 處差異</span>
+                        </div>
+                    </div>
+
+                    <!-- Matrix Table Container -->
+                    <div class="overflow-x-auto bg-slate-950 p-3 rounded-xl border border-slate-800 flex-1 flex items-center justify-center">
+                        <div id="binaryMatrixContainer" class="inline-block"></div>
+                    </div>
+
+                    <!-- Matrix Differences List -->
+                    <div class="mt-3 pt-2.5 border-t border-slate-800 flex flex-wrap items-center gap-1.5 text-xs" id="matrixDiffTags">
+                        <!-- Populated via JS -->
+                    </div>
+                </div>
+
+                <!-- 4D Flow MRI Weighted Adjacency Submatrix & Anatomical Reference (5 cols) -->
+                <div class="xl:col-span-5 space-y-5 flex flex-col">
+
+                    <!-- 4D Flow MRI Weighted Matrix Card (Fig. 3 & Fig. 4) -->
+                    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl flex-1 flex flex-col justify-between">
+                        <div>
+                            <div class="flex items-center justify-between gap-2 mb-2">
+                                <h2 class="text-sm font-semibold text-white flex items-center gap-2">
+                                    <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                                    4D Flow MRI 加權鄰接矩陣 (Fig. 3 & 4)
+                                </h2>
+                                <select id="mriPresetSelect" class="bg-slate-800 border border-slate-700 text-xs text-slate-200 rounded-lg px-2.5 py-1 focus:outline-none focus:border-sky-500">
+                                    <option value="repaired_tof">Totally Repaired TOF (Fig. 3)</option>
+                                    <option value="corrected_dtga">Surgically Corrected d-TGA (Fig. 4a)</option>
+                                    <option value="fontan">Fontan Circulation (Fig. 4b)</option>
+                                </select>
+                            </div>
+                            <p class="text-xs text-slate-400 mb-3" id="mriDescription">
+                                根據論文 Figure 3，針對完全矯正後之法洛氏四重症 (Totally Repaired TOF)，擷取感興趣之局部節點子矩陣 $\{RV, PT, RPA, LPA\}$，並以 4D Flow MRI 測量之邊界峰值流速 (Peak Velocity, cm/s) 作為邊權重，以偵測肺動脈瓣或分支狹窄。
+                            </p>
+
+                            <!-- Subgraph & Weighted Matrix Display -->
+                            <div id="mriMatrixContent" class="space-y-3">
+                                <!-- Populated via JS -->
+                            </div>
+                        </div>
+
+                        <div class="mt-4 pt-3 border-t border-slate-800/80 text-[11px] text-slate-400 flex items-center justify-between">
+                            <span>臨床判讀提示：峰值流速 &gt; 180~200 cm/s 常提示血管或吻合處狹窄 (Stenosis)</span>
+                            <span class="mono text-sky-400">單位: cm/s</span>
+                        </div>
+                    </div>
+
+                    <!-- Vertex Anatomical Dictionary Quick Reference -->
+                    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl">
+                        <div class="flex items-center justify-between mb-2">
+                            <h2 class="text-sm font-semibold text-white flex items-center gap-2">
+                                <span class="w-2 h-2 rounded-full bg-purple-400"></span>
+                                論文 24+1 節點定義對照表 ($V=\{v_1, \dots, v_{25}\}$)
+                            </h2>
+                            <span class="text-[11px] text-slate-400">點擊節點可定位</span>
+                        </div>
+                        <div class="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-[190px] overflow-y-auto pr-1 text-[11px]" id="vertexDictContainer">
+                            <!-- Populated via JS -->
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Paper Theory Modal -->
+    <div id="paperModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-3xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+            <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
+                <div>
+                    <h3 class="text-base font-bold text-white">論文核心方法與圖論模型說明</h3>
+                    <p class="text-xs text-slate-400">Yao-Ting Lee & Shyh-Jye Chen, Scientific Reports (2023) 13:11135</p>
+                </div>
+                <button id="btnCloseModal" class="text-slate-400 hover:text-white p-1.5 rounded-lg bg-slate-800">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            <div class="p-6 overflow-y-auto space-y-4 text-sm text-slate-300 leading-relaxed">
+                <div class="p-3.5 rounded-xl bg-sky-500/10 border border-sky-500/30 text-xs text-sky-200">
+                    <strong>核心定義：</strong> 將心臟與循環系統表示為有向圖 $G(V, E)$，其中<strong>節點 (Vertices, $V$)</strong> 定義為血液流經的解剖腔室或血管空間 ($v_1 \sim v_{24}$，必要時新增 $v_{25}$)，<strong>有向邊 (Directed Edges, $E$)</strong> 定義為空間之間的直接血流與方向。
+                </div>
+                <div>
+                    <h4 class="font-semibold text-white mb-1">1. 先天性心臟病的五種圖論分類 (Table 1)</h4>
+                    <ul class="list-disc pl-5 space-y-1 text-xs text-slate-300">
+                        <li><strong>增加節點 (Increased vertices)：</strong> 如開放性動脈導管 (PDA)、主肺動脈側支血管 (MAPCA)、永存左上腔靜脈 (PLSVC)，矩陣維度由 $24\times24$ 擴充為 $25\times25$。</li>
+                        <li><strong>減少節點 (Decreased vertices)：</strong> 如單側肺動脈缺如，在矩陣中保持 $24\times24$ 維度，但將連接該節點的所有邊歸零（孤立該節點）。</li>
+                        <li><strong>增加連線 (Increased edges)：</strong> 如心房中隔缺損 (ASD, $a_{3,14}=1, a_{14,3}=1$)、心室中隔缺損 (VSD, $a_{4,15}=1, a_{15,4}=1$)、主肺動脈窗。</li>
+                        <li><strong>減少連線 (Decreased edges)：</strong> 如三尖瓣閉鎖 ($a_{3,4}=0$)、肺動脈瓣閉鎖 ($a_{4,5}=0$)。</li>
+                        <li><strong>異常連接 (Abnormal connections)：</strong> 如右旋大血管轉位 (d-TGA，相當於將正常心臟矩陣的第 5 直行 PT 與第 16 直行 AAo 互換)、左旋大血管轉位 (L-TGA，第 4 與 15 行互換且第 5 與 16 行互換)、雙出口右心室 (DORV)、永存動脈幹 (Truncus arteriosus)。</li>
+                    </ul>
+                </div>
+                <div>
+                    <h4 class="font-semibold text-white mb-1">2. 生理存活條件驗證法則 (Survival Rule in CHD)</h4>
+                    <p class="text-xs text-slate-300">
+                        論文於 Discussion 提出：所有具 $24$ 個節點的可能圖形共有 $2^{(24\times23)} \approx 1.47\times 10^{166}$ 種，但病人要能存活，圖形必須滿足基本生理條件：<br>
+                        <span class="text-emerald-300 font-medium">「至少存在一側肺臟 ($v_8$ 右肺或 $v_9$ 左肺)，使得從體靜脈回流 ($v_1, v_2$) 存在一條有向路徑到達該肺臟，且從該肺臟存在一條有向路徑到達體循環動脈供應 ($v_{16}$ AAo 與 $v_{24}$ SCTO)。」</span><br>
+                        例如單純的 d-TGA 若沒有合併 VSD、ASD 或 PDA，體靜脈缺氧血只會在體循環內無限循環，無法進入肺部進行氣體交換，因此不符合存活條件。
+                    </p>
+                </div>
+                <div>
+                    <h4 class="font-semibold text-white mb-1">3. 4D Flow MRI 加權鄰接矩陣 (Weighted Adjacency Matrix)</h4>
+                    <p class="text-xs text-slate-300">
+                        臨床上常透過超音波或 4D Flow MRI 測量特定解剖邊界的血流參數（如峰值流速 Peak Velocity、流量、壓力差）。擷取感興趣的解剖子矩陣並將元素 $1$ 替換為測量到的峰值流速 (cm/s)，即可建立加權鄰接矩陣，用於術後追蹤（如完全矯正後 TOF、Arterial Switch 術後 d-TGA、Fontan 循環之吻合處狹窄偵測）。
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /***********************************************************************
+         * 1. ANATOMICAL VERTICES DEFINITION (v1 to v24 + v25)
+         * Coordinates meticulously designed to match Figure 1 in the paper.
+         ***********************************************************************/
+        const BASE_VERTICES = [
+            { id: 1,  code: 'SVC',   name: 'Superior Vena Cava',             zh: '上腔靜脈',         group: 'right',  x: 85,   y: 165 },
+            { id: 2,  code: 'IVC',   name: 'Inferior Vena Cava',             zh: '下腔靜脈',         group: 'right',  x: 85,   y: 285 },
+            { id: 3,  code: 'RA',    name: 'Right Atrium',                   zh: '右心房',           group: 'right',  x: 165,  y: 225 },
+            { id: 4,  code: 'RV',    name: 'Right Ventricle',                zh: '右心室',           group: 'right',  x: 250,  y: 225 },
+            { id: 5,  code: 'PT',    name: 'Pulmonary Trunk',                zh: '肺動脈幹',         group: 'right',  x: 340,  y: 225 },
+            { id: 6,  code: 'RPA',   name: 'Right Pulmonary Artery',         zh: '右肺動脈',         group: 'right',  x: 410,  y: 170 },
+            { id: 7,  code: 'LPA',   name: 'Left Pulmonary Artery',          zh: '左肺動脈',         group: 'right',  x: 410,  y: 285 },
+            { id: 8,  code: 'RL',    name: 'Right Lung',                     zh: '右肺',             group: 'lung',   x: 490,  y: 170 },
+            { id: 9,  code: 'LL',    name: 'Left Lung',                      zh: '左肺',             group: 'lung',   x: 490,  y: 285 },
+            { id: 10, code: 'RUPV',  name: 'Right Upper Pulmonary Vein',     zh: '右上肺靜脈',       group: 'lung',   x: 575,  y: 135 },
+            { id: 11, code: 'RLPV',  name: 'Right Lower Pulmonary Vein',     zh: '右下肺靜脈',       group: 'lung',   x: 575,  y: 198 },
+            { id: 12, code: 'LUPV',  name: 'Left Upper Pulmonary Vein',      zh: '左上肺靜脈',       group: 'lung',   x: 575,  y: 262 },
+            { id: 13, code: 'LLPV',  name: 'Left Lower Pulmonary Vein',      zh: '左下肺靜脈',       group: 'lung',   x: 575,  y: 325 },
+            { id: 14, code: 'LA',    name: 'Left Atrium',                    zh: '左心房',           group: 'left',   x: 675,  y: 225 },
+            { id: 15, code: 'LV',    name: 'Left Ventricle',                 zh: '左心室',           group: 'left',   x: 760,  y: 225 },
+            { id: 16, code: 'AAo',   name: 'Ascending Aorta',                zh: '升主動脈',         group: 'left',   x: 845,  y: 225 },
+            { id: 17, code: 'AoA',   name: 'Aortic Arch',                    zh: '主動脈弓',         group: 'left',   x: 930,  y: 225 },
+            { id: 18, code: 'DAo',   name: 'Descending Aorta',               zh: '降主動脈',         group: 'left',   x: 930,  y: 325 },
+            { id: 19, code: 'IA',    name: 'Innominate Artery',              zh: '無名動脈',         group: 'left',   x: 1005, y: 165 },
+            { id: 20, code: 'LCCA',  name: 'Left Common Carotid Artery',     zh: '左總頸動脈',       group: 'left',   x: 1005, y: 255 },
+            { id: 21, code: 'LSCA',  name: 'Left Subclavian Artery',         zh: '左鎖骨下動脈',     group: 'left',   x: 1005, y: 325 },
+            { id: 22, code: 'RCCA',  name: 'Right Common Carotid Artery',    zh: '右總頸動脈',       group: 'left',   x: 1080, y: 195 },
+            { id: 23, code: 'RSCA',  name: 'Right Subclavian Artery',        zh: '右鎖骨下動脈',     group: 'left',   x: 1080, y: 120 },
+            { id: 24, code: 'SCTO',  name: 'Systemic Circulation Target Organs', zh: '體循環目標器官', group: 'scto', x: 575,  y: 485 }
+        ];
+
+        // Normal Heart Directed Edges (1-based indices matching v1..v24)
+        const NORMAL_EDGES = [
+            [1, 3], [2, 3], [3, 4], [4, 5],
+            [5, 6], [5, 7], [6, 8], [7, 9],
+            [8, 10], [8, 11], [9, 12], [9, 13],
+            [10, 14], [11, 14], [12, 14], [13, 14],
+            [14, 15], [15, 16], [16, 17],
+            [17, 18], [17, 19], [17, 20], [17, 21],
+            [19, 22], [19, 23],
+            [18, 24], [20, 24], [21, 24], [22, 24], [23, 24],
+            [24, 1], [24, 2]
+        ];
+
+        /***********************************************************************
+         * 2. MODULAR CHD ANOMALIES & SURGICAL PROCEDURES (Table 1 & Table 2)
+         ***********************************************************************/
+        const MODULAR_RULES = [
+            // Category 1: Increased Vertices (v25)
+            {
+                id: 'pda',
+                category: '1. 新增節點 (Increased Vertices - $v_{25}$)',
+                name: 'PDA (開放性動脈導管)',
+                formula: '$v_{25}=\\text{PDA}, a_{18,25}=1, a_{25,5}=1$',
+                v25: { code: 'PDA', name: 'Patent Ductus Arteriosus', zh: '開放性動脈導管', x: 640, y: 65 },
+                apply: (m) => { m[18][25] = 1; m[25][5] = 1; }
+            },
+            {
+                id: 'mapca',
+                category: '1. 新增節點 (Increased Vertices - $v_{25}$)',
+                name: 'MAPCA (主肺動脈側支血管)',
+                formula: '$v_{25}=\\text{MAPCA}, a_{18,25}=1, a_{25,8}=1, a_{25,9}=1$',
+                v25: { code: 'MAPCA', name: 'Major Aortopulmonary Collateral Artery', zh: '主肺動脈側支血管', x: 685, y: 65 },
+                apply: (m) => { m[18][25] = 1; m[25][8] = 1; m[25][9] = 1; }
+            },
+            {
+                id: 'plsvc',
+                category: '1. 新增節點 (Increased Vertices - $v_{25}$)',
+                name: 'PLSVC (永存左上腔靜脈)',
+                formula: '$v_{25}=\\text{PLSVC}, a_{24,25}=1, a_{25,3}=1$',
+                v25: { code: 'PLSVC', name: 'Persistent Left Superior Vena Cava', zh: '永存左上腔靜脈', x: 165, y: 80 },
+                apply: (m) => { m[24][25] = 1; m[25][3] = 1; }
+            },
+            // Category 2: Decreased Vertices
+            {
+                id: 'uapa_r',
+                category: '2. 減少/孤立節點 (Decreased Vertices)',
+                name: 'UAPA-Right (單側右肺動脈缺如)',
+                formula: '$a_{5,6}=0, a_{6,8}=0$',
+                apply: (m) => { m[5][6] = 0; m[6][8] = 0; }
+            },
+            {
+                id: 'uapa_l',
+                category: '2. 減少/孤立節點 (Decreased Vertices)',
+                name: 'UAPA-Left (單側左肺動脈缺如)',
+                formula: '$a_{5,7}=0, a_{7,9}=0$',
+                apply: (m) => { m[5][7] = 0; m[7][9] = 0; }
+            },
+            // Category 3: Increased Edges
+            {
+                id: 'asd',
+                category: '3. 新增連線/分流 (Increased Edges)',
+                name: 'ASD (心房中隔缺損)',
+                formula: '$a_{3,14}=1, a_{14,3}=1$',
+                apply: (m) => { m[3][14] = 1; m[14][3] = 1; }
+            },
+            {
+                id: 'vsd',
+                category: '3. 新增連線/分流 (Increased Edges)',
+                name: 'VSD (心室中隔缺損)',
+                formula: '$a_{4,15}=1, a_{15,4}=1$',
+                apply: (m) => { m[4][15] = 1; m[15][4] = 1; }
+            },
+            {
+                id: 'ap_window',
+                category: '3. 新增連線/分流 (Increased Edges)',
+                name: 'AP Window (主肺動脈窗/中隔缺損)',
+                formula: '$a_{5,16}=1, a_{16,5}=1$',
+                apply: (m) => { m[5][16] = 1; m[16][5] = 1; }
+            },
+            // Category 4: Decreased Edges
+            {
+                id: 'tricuspid_atresia',
+                category: '4. 減少連線/瓣膜閉鎖 (Decreased Edges)',
+                name: 'Tricuspid Atresia (三尖瓣閉鎖)',
+                formula: '$a_{3,4}=0$',
+                apply: (m) => { m[3][4] = 0; }
+            },
+            {
+                id: 'pulmonary_atresia',
+                category: '4. 減少連線/瓣膜閉鎖 (Decreased Edges)',
+                name: 'Pulmonary Atresia (肺動脈瓣閉鎖)',
+                formula: '$a_{4,5}=0$',
+                apply: (m) => { m[4][5] = 0; }
+            },
+            // Category 5: Abnormal Connections
+            {
+                id: 'papvr',
+                category: '5. 異常連接 (Abnormal Connections)',
+                name: 'PAPVR (部分肺靜脈回流異常 RUPV→RA)',
+                formula: '$a_{10,14}=0, a_{10,3}=1$',
+                apply: (m) => { m[10][14] = 0; m[10][3] = 1; }
+            },
+            {
+                id: 'dtga',
+                category: '5. 異常連接 (Abnormal Connections)',
+                name: 'd-TGA (右旋大血管轉位)',
+                formula: '$a_{4,5}=0, a_{4,16}=1, a_{15,16}=0, a_{15,5}=1$',
+                apply: (m) => {
+                    m[4][5] = 0; m[4][16] = 1;
+                    m[15][16] = 0; m[15][5] = 1;
+                }
+            },
+            {
+                id: 'ltga',
+                category: '5. 異常連接 (Abnormal Connections)',
+                name: 'L-TGA (先天性矯正型/左旋大血管轉位)',
+                formula: '互換 Col(4,15) 與 Col(5,16): RA→LV→PT, LA→RV→AAo',
+                apply: (m) => {
+                    m[3][4] = 0; m[3][15] = 1;
+                    m[14][15] = 0; m[14][4] = 1;
+                    m[4][5] = 0; m[4][16] = 1;
+                    m[15][16] = 0; m[15][5] = 1;
+                }
+            },
+            {
+                id: 'dorv',
+                category: '5. 異常連接 (Abnormal Connections)',
+                name: 'DORV (雙出口右心室)',
+                formula: '$a_{4,5}=1, a_{4,16}=1, a_{15,16}=0, a_{15,5}=0$',
+                apply: (m) => {
+                    m[4][5] = 1; m[4][16] = 1;
+                    m[15][16] = 0; m[15][5] = 0;
+                }
+            },
+            {
+                id: 'truncus',
+                category: '5. 異常連接 (Abnormal Connections)',
+                name: 'Truncus Arteriosus (永存動脈幹)',
+                formula: '$v_{16}=\\text{Truncus}, a_{4,5}=0, a_{4,16}=1, a_{15,16}=1, a_{16,5}=1$',
+                apply: (m) => {
+                    m[4][5] = 0;
+                    m[4][16] = 1;
+                    m[15][16] = 1;
+                    m[16][5] = 1;
+                }
+            },
+            // Category 6: Surgical Procedures (Table 2)
+            {
+                id: 'rmbt',
+                category: '6. 外科手術與分流術 (Procedures - Table 2)',
+                name: 'Right mBT Shunt (右側改良式 BT 分流術)',
+                formula: '$v_{25}=\\text{mBT}, b_{23,25}=1, b_{25,6}=1$ (若合併肺動脈閉鎖則 $b_{5,6}=0, b_{6,5}=1$)',
+                v25: { code: 'mBT', name: 'Right Modified Blalock-Taussig Shunt', zh: '右側 mBT 分流管', x: 745, y: 55 },
+                apply: (m, activeSet) => {
+                    m[23][25] = 1;
+                    m[25][6] = 1;
+                    // As described in Fig 1b & 2b: in extreme TOF with pulmonary atresia, flow reverses from RPA(6) to PT(5)
+                    if (activeSet.has('pulmonary_atresia') || m[4][5] === 0) {
+                        m[5][6] = 0;
+                        m[6][5] = 1;
+                    }
+                }
+            },
+            {
+                id: 'lmbt',
+                category: '6. 外科手術與分流術 (Procedures - Table 2)',
+                name: 'Left mBT Shunt (左側改良式 BT 分流術)',
+                formula: '$v_{25}=\\text{mBT}, b_{21,25}=1, b_{25,7}=1$',
+                v25: { code: 'L-mBT', name: 'Left Modified Blalock-Taussig Shunt', zh: '左側 mBT 分流管', x: 700, y: 405 },
+                apply: (m, activeSet) => {
+                    m[21][25] = 1;
+                    m[25][7] = 1;
+                    if (activeSet.has('pulmonary_atresia') || m[4][5] === 0) {
+                        m[5][7] = 0;
+                        m[7][5] = 1;
+                    }
+                }
+            },
+            {
+                id: 'norwood_rmbt',
+                category: '6. 外科手術與分流術 (Procedures - Table 2)',
+                name: 'Norwood + Right mBT Shunt (諾伍德手術)',
+                formula: '$b_{5,6}=0, b_{5,7}=0, b_{5,16}=1; v_{25}=\\text{mBT}, b_{23,25}=1, b_{25,6}=1, b_{6,7}=1$',
+                v25: { code: 'mBT', name: 'Right mBT Shunt (Norwood)', zh: '右側 mBT 分流管', x: 745, y: 55 },
+                apply: (m) => {
+                    m[5][6] = 0; m[5][7] = 0; m[5][16] = 1;
+                    m[23][25] = 1; m[25][6] = 1; m[6][7] = 1;
+                }
+            },
+            {
+                id: 'glenn',
+                category: '6. 外科手術與分流術 (Procedures - Table 2)',
+                name: 'Bidirectional Glenn Shunt (雙向 Glenn 分流術)',
+                formula: '$b_{1,3}=0, b_{1,6}=1, b_{6,7}=1$',
+                apply: (m) => {
+                    m[1][3] = 0;
+                    m[1][6] = 1;
+                    m[6][7] = 1;
+                }
+            },
+            {
+                id: 'fontan',
+                category: '6. 外科手術與分流術 (Procedures - Table 2)',
+                name: 'Fontan Procedure (Fontan 單心室循環手術)',
+                formula: '$b_{2,3}=0, b_{2,6}=1$ (常搭配 Glenn $b_{1,3}=0, b_{1,6}=1, b_{6,7}=1, b_{5,6}=0, b_{5,7}=0$)',
+                apply: (m) => {
+                    m[2][3] = 0;
+                    m[2][6] = 1;
+                }
+            },
+            {
+                id: 'arterial_switch',
+                category: '6. 外科手術與分流術 (Procedures - Table 2)',
+                name: 'Arterial Switch Procedure (大動脈轉位矯正術)',
+                formula: '將第 5 直行 (PT) 與第 16 直行 (AAo) 互換還原',
+                apply: (m) => {
+                    for (let r = 1; r <= 24; r++) {
+                        const tmp = m[r][5];
+                        m[r][5] = m[r][16];
+                        m[r][16] = tmp;
+                    }
+                }
+            }
+        ];
+
+        /***********************************************************************
+         * 3. PAPER FEATURED PRESETS (Fig. 1a, 1b, 1c, Fig. 3, Fig. 4a, 4b)
+         ***********************************************************************/
+        const PAPER_PRESETS = [
+            {
+                id: 'normal',
+                title: 'Normal Heart (正常心臟結構)',
+                badge: 'Fig. 1a / 2a',
+                rules: [],
+                mriKey: 'repaired_tof',
+                desc: '正常人類心血管循環系統：由 24 個空間節點 ($v_1 \\sim v_{24}$) 與 32 條有向血流邊組成完整雙循環迴路。'
+            },
+            {
+                id: 'extreme_tof_mbt',
+                title: 'Extreme TOF + Right mBT Shunt (極端法洛氏四重症合併右側 mBT 分流)',
+                badge: 'Fig. 1b / 2b',
+                rules: ['pulmonary_atresia', 'vsd', 'rmbt'],
+                mriKey: 'repaired_tof',
+                desc: '論文重點案例 (Fig. 1b)：因肺動脈閉鎖移除 RV→PT ($b_{4,5}=0$)，加入雙向 VSD ($b_{4,15}=b_{15,4}=1$)，並新增第 25 節點 $v_{25}=\\text{mBT}$ 由右鎖骨下動脈 (RSCA) 引流至右肺動脈 (RPA)，且使血流由 RPA 逆流回 PT ($b_{5,6}=0, b_{6,5}=1$) 以供應左肺。'
+            },
+            {
+                id: 'dtga_vsd',
+                title: 'd-TGA with VSD (右旋大血管轉位合併心室中隔缺損)',
+                badge: 'Fig. 1c / 2c',
+                rules: ['dtga', 'vsd'],
+                mriKey: 'corrected_dtga',
+                desc: '論文重點案例 (Fig. 1c)：心室與大動脈連接不一致 (RV→AAo $c_{4,16}=1$, LV→PT $c_{15,5}=1$)，相當於正常矩陣第 5 行與第 16 行互換；必須仰賴 VSD ($c_{4,15}=c_{15,4}=1$) 建立體靜脈回流至肺部及肺部至主動脈的存活路徑。'
+            },
+            {
+                id: 'dtga_isolated',
+                title: 'Isolated d-TGA without Shunt (無分流之單純 d-TGA — 不符合存活條件示範)',
+                badge: 'Discussion 存活驗證',
+                rules: ['dtga'],
+                mriKey: 'corrected_dtga',
+                desc: '論文 Discussion 案例：若 d-TGA 患者無 VSD/ASD/PDA，體靜脈缺氧血由 RV 直接打入 AAo，與肺循環完全隔絕，無法完成氣體交換，系統將自動判定為「不符合生理存活條件」。'
+            },
+            {
+                id: 'fontan_circ',
+                title: 'Fontan Circulation (Fontan 全腔靜脈肺動脈連接循環)',
+                badge: 'Fig. 4b / Table 2',
+                rules: ['tricuspid_atresia', 'pulmonary_atresia', 'asd', 'vsd', 'glenn', 'fontan'],
+                customPatch: (m) => {
+                    // As described in Fig 4b caption: PT was separated from RPA and LPA; SVC and IVC were connected to RPA; RPA connected to LPA.
+                    m[5][6] = 0; m[5][7] = 0;
+                    m[1][3] = 0; m[1][6] = 1;
+                    m[2][3] = 0; m[2][6] = 1;
+                    m[6][7] = 1;
+                },
+                mriKey: 'fontan',
+                desc: '論文 Figure 4b 案例：肺動脈幹 (PT) 與左右肺動脈分離；上下腔靜脈 (SVC, IVC) 直接吻合至右肺動脈 (RPA)，再流向左肺動脈 (LPA)，透過單心室驅動全身循環。'
+            },
+            {
+                id: 'dorv_vsd_pda',
+                title: 'DORV + VSD + PDA (雙出口右心室合併 VSD 與開放性動脈導管)',
+                badge: 'Table 1 組合範例',
+                rules: ['dorv', 'vsd', 'pda'],
+                mriKey: 'repaired_tof',
+                desc: '肺動脈幹 (PT) 與升主動脈 (AAo) 皆發自右心室 ($a_{4,5}=1, a_{4,16}=1$)，左心室需透過 VSD 排出血液，並合併第 25 節點開放性動脈導管 ($v_{25}=\\text{PDA}$)。'
+            }
+        ];
+
+        /***********************************************************************
+         * 4. 4D FLOW MRI WEIGHTED ADJACENCY SUBMATRICES (Fig. 3 & Fig. 4)
+         ***********************************************************************/
+        const MRI_DATASETS = {
+            repaired_tof: {
+                title: 'Totally Repaired TOF (完全矯正後之法洛氏四重症 — Fig. 3)',
+                nodes: [
+                    { id: 4, code: 'RV' },
+                    { id: 5, code: 'PT' },
+                    { id: 6, code: 'RPA' },
+                    { id: 7, code: 'LPA' }
+                ],
+                weights: [
+                    [0, 137.7, 0,     0    ],
+                    [0, 0,     208.8, 206.8],
+                    [0, 0,     0,     0    ],
+                    [0, 0,     0,     0    ]
+                ],
+                note: '論文 Fig. 3 實測值：RV→PT 峰值流速為 137.7 cm/s；PT→RPA (208.8 cm/s) 與 PT→LPA (206.8 cm/s) 流速偏高，反映術後常見之肺動脈分支狹窄 (Pulmonary Stenosis)。'
+            },
+            corrected_dtga: {
+                title: 'Surgically Corrected d-TGA (Arterial Switch 術後之 d-TGA — Fig. 4a)',
+                nodes: [
+                    { id: 4, code: 'RV' },
+                    { id: 5, code: 'PT' },
+                    { id: 6, code: 'RPA' },
+                    { id: 7, code: 'LPA' }
+                ],
+                weights: [
+                    [0, 168.1, 0,     0    ],
+                    [0, 0,     206.8, 183.7],
+                    [0, 0,     0,     0    ],
+                    [0, 0,     0,     0    ]
+                ],
+                note: '論文 Fig. 4a 實測值：接受大動脈轉位手術 (Arterial Switch) 後，RV→PT 為 168.1 cm/s，PT→RPA 為 206.8 cm/s，PT→LPA 為 183.7 cm/s。'
+            },
+            fontan: {
+                title: 'Fontan Circulation (Fontan 手術後全腔靜脈肺動脈循環 — Fig. 4b)',
+                nodes: [
+                    { id: 1, code: 'SVC' },
+                    { id: 2, code: 'IVC' },
+                    { id: 6, code: 'RPA' },
+                    { id: 7, code: 'LPA' }
+                ],
+                weights: [
+                    [0, 0, 36.0, 0   ],
+                    [0, 0, 34.6, 0   ],
+                    [0, 0, 0,    44.3],
+                    [0, 0, 0,    0   ]
+                ],
+                note: '論文 Fig. 4b 實測值：SVC 與 IVC 直接匯入 RPA (峰值流速 36.0 與 34.6 cm/s)，再由 RPA 流向 LPA (44.3 cm/s)，用於監測吻合處狹窄與肺動脈壓力。'
+            }
+        };
+
+        /***********************************************************************
+         * 5. APPLICATION STATE
+         ***********************************************************************/
+        let activeRuleIds = new Set();
+        let activePresetId = 'normal';
+        let currentDimension = 24;
+        let normalMatrix = createEmptyMatrix(25);
+        let currentMatrix = createEmptyMatrix(25);
+        let customMatrixOverrides = []; // [{r, c, val}]
+        let selectedVertexId = null;
+        let highlightSurvivalPath = false;
+        let currentSurvivalResult = null;
+
+        function createEmptyMatrix(size) {
+            const m = [];
+            for (let i = 0; i <= size; i++) {
+                m.push(new Array(size + 1).fill(0));
+            }
+            return m;
+        }
+
+        function initNormalMatrix() {
+            normalMatrix = createEmptyMatrix(25);
+            for (const [u, v] of NORMAL_EDGES) {
+                normalMatrix[u][v] = 1;
+            }
+        }
+
+        /***********************************************************************
+         * 6. COMPUTE CURRENT MATRIX FROM ACTIVE RULES & OVERRIDES
+         ***********************************************************************/
+        function recomputeGraphState() {
+            currentMatrix = createEmptyMatrix(25);
+            for (let r = 1; r <= 24; r++) {
+                for (let c = 1; c <= 24; c++) {
+                    currentMatrix[r][c] = normalMatrix[r][c];
+                }
+            }
+
+            let hasV25 = false;
+            let v25Meta = null;
+
+            // Apply modular rules in order
+            for (const rule of MODULAR_RULES) {
+                if (activeRuleIds.has(rule.id)) {
+                    if (rule.v25) {
+                        hasV25 = true;
+                        v25Meta = rule.v25;
+                    }
+                    rule.apply(currentMatrix, activeRuleIds);
+                }
+            }
+
+            // Apply preset custom patch if any
+            const presetObj = PAPER_PRESETS.find(p => p.id === activePresetId);
+            if (presetObj && presetObj.customPatch) {
+                presetObj.customPatch(currentMatrix);
+            }
+
+            // Apply manual clicks from the Binary Adjacency Matrix
+            for (const ov of customMatrixOverrides) {
+                currentMatrix[ov.r][ov.c] = ov.val;
+                if (ov.r === 25 || ov.c === 25) {
+                    if (ov.val === 1) hasV25 = true;
+                }
+            }
+
+            currentDimension = hasV25 ? 25 : 24;
+            currentSurvivalResult = evaluateSurvivalRule(currentMatrix, currentDimension);
+
+            updateHeaderSummary(v25Meta);
+            renderViabilityBanner();
+            renderDirectedGraphSVG(v25Meta);
+            renderBinaryMatrix();
+            renderRuleCheckboxes();
+            renderPresetButtons();
+        }
+
+        /***********************************************************************
+         * 7. SURVIVAL RULE PATH FINDER (BFS from Venous Return -> Lung -> AAo)
+         * "there exists a lung (v8 or v9) such that a path from systemic venous
+         *  return (v1, v2) to the lung and a path from the lung to systemic
+         *  arterial supply (v16 AAo -> v24 SCTO)"
+         ***********************************************************************/
+        function findShortestDirectedPath(matrix, dim, startNodes, targetNode) {
+            const queue = [];
+            const visited = new Set();
+            const parent = new Map();
+
+            for (const s of startNodes) {
+                queue.push(s);
+                visited.add(s);
+                parent.set(s, null);
+            }
+
+            while (queue.length > 0) {
+                const curr = queue.shift();
+                if (curr === targetNode) {
+                    const path = [];
+                    let step = curr;
+                    while (step !== null) {
+                        path.unshift(step);
+                        step = parent.get(step);
+                    }
+                    return path;
+                }
+                for (let next = 1; next <= dim; next++) {
+                    if (matrix[curr][next] === 1 && !visited.has(next)) {
+                        visited.add(next);
+                        parent.set(next, curr);
+                        queue.push(next);
+                    }
+                }
+            }
+            return null;
+        }
+
+        function evaluateSurvivalRule(matrix, dim) {
+            // Check Right Lung (v8) and Left Lung (v9)
+            const lungs = [8, 9];
+            for (const lungId of lungs) {
+                const pathToLung = findShortestDirectedPath(matrix, dim, [1, 2], lungId);
+                const pathFromLungToAAo = findShortestDirectedPath(matrix, dim, [lungId], 16);
+                const pathFromAAoToSCTO = findShortestDirectedPath(matrix, dim, [16], 24);
+
+                if (pathToLung && pathFromLungToAAo && pathFromAAoToSCTO) {
+                    // Combine edges for highlighting
+                    const edgeSet = new Set();
+                    const addEdges = (p) => {
+                        for (let i = 0; i < p.length - 1; i++) {
+                            edgeSet.add(`${p[i]}->${p[i + 1]}`);
+                        }
+                    };
+                    addEdges(pathToLung);
+                    addEdges(pathFromLungToAAo);
+                    addEdges(pathFromAAoToSCTO);
+
+                    return {
+                        viable: true,
+                        lungId,
+                        pathToLung,
+                        pathFromLungToAAo,
+                        edgeSet
+                    };
+                }
+            }
+
+            // Determine why it failed
+            const canReachRL = findShortestDirectedPath(matrix, dim, [1, 2], 8);
+            const canReachLL = findShortestDirectedPath(matrix, dim, [1, 2], 9);
+            let reason = '';
+            if (!canReachRL && !canReachLL) {
+                reason = '體靜脈回流 (SVC/IVC) 無法到達任何一側肺臟 ($v_8, v_9$)，缺氧血無法進行氣體交換。';
+            } else {
+                reason = '肺部充氧血無法到達升主動脈 ($v_{16}$ AAo) 與體循環器官 ($v_{24}$ SCTO)。';
+            }
+
+            return {
+                viable: false,
+                reason,
+                edgeSet: new Set()
+            };
+        }
+
+        /***********************************************************************
+         * 8. RENDER DIRECTED GRAPH SVG (Matching Paper Figure 1 Layout)
+         ***********************************************************************/
+        function getVerticesList(v25Meta) {
+            const list = [...BASE_VERTICES];
+            if (currentDimension === 25) {
+                const meta = v25Meta || { code: 'v25', name: 'Additional Shunt/Vessel', zh: '額外分流/結構', x: 745, y: 55 };
+                list.push({
+                    id: 25,
+                    code: meta.code,
+                    name: meta.name,
+                    zh: meta.zh,
+                    group: 'extra',
+                    x: meta.x,
+                    y: meta.y
+                });
+            }
+            return list;
+        }
+
+        function computeEdgePath(uNode, vNode, u, v, matrix) {
+            const x1 = uNode.x, y1 = uNode.y;
+            const x2 = vNode.x, y2 = vNode.y;
+
+            // 1. Special Orthogonal / Curved Routing matching Figure 1a, 1b, 1c!
+            // SCTO (24) -> SVC (1) & IVC (2) return loop on far left
+            if (u === 24 && v === 1) {
+                return `M ${x1 - 36} ${y1 + 8} L 26 ${y1 + 8} L 26 ${y2} L ${x2 - 26} ${y2}`;
+            }
+            if (u === 24 && v === 2) {
+                return `M ${x1 - 36} ${y1 - 8} L 44 ${y1 - 8} L 44 ${y2} L ${x2 - 26} ${y2}`;
+            }
+
+            // Systemic arteries (18, 20, 21, 22, 23) -> SCTO (24)
+            if (v === 24 && [18, 20, 21, 22, 23].includes(u)) {
+                const offsets = { 18: -16, 21: -6, 20: 4, 22: 14, 23: 24 };
+                const yTarget = y2 + (offsets[u] || 0);
+                const xDrop = u === 18 ? x1 : (u === 21 ? x1 + 25 : (u === 20 ? x1 + 42 : (u === 22 ? x1 + 22 : x1 + 38)));
+                return `M ${x1} ${y1 + 24} L ${x1} ${y1 + 32} L ${xDrop} ${y1 + 32} L ${xDrop} ${yTarget} L ${x2 + 38} ${yTarget}`;
+            }
+
+            // VSD bidirectional edges between RV (4) and LV (15) at the bottom (matching Fig 1b & 1c)
+            if ((u === 4 && v === 15) || (u === 15 && v === 4)) {
+                const yLevel = u === 4 ? 415 : 432;
+                const xStart = u === 4 ? x1 - 6 : x1 + 6;
+                const xEnd   = u === 4 ? x2 - 6 : x2 + 6;
+                return `M ${xStart} ${y1 + 24} L ${xStart} ${yLevel} L ${xEnd} ${yLevel} L ${xEnd} ${y2 + 24}`;
+            }
+
+            // ASD bidirectional edges between RA (3) and LA (14)
+            if ((u === 3 && v === 14) || (u === 14 && v === 3)) {
+                const yLevel = u === 3 ? 375 : 390;
+                return `M ${x1} ${y1 + 24} L ${x1} ${yLevel} L ${x2} ${yLevel} L ${x2} ${y2 + 24}`;
+            }
+
+            // d-TGA discordant edges: RV (4) -> AAo (16) and LV (15) -> PT (5) at the top (matching Fig 1c)
+            if (u === 4 && v === 16) {
+                return `M ${x1} ${y1 - 24} L ${x1} 42 L ${x2} 42 L ${x2} ${y2 - 24}`;
+            }
+            if (u === 15 && v === 5) {
+                return `M ${x1} ${y1 - 24} L ${x1} 75 L ${x2} 75 L ${x2} ${y2 - 24}`;
+            }
+
+            // L-TGA discordant edges: RA (3) -> LV (15) and LA (14) -> RV (4)
+            if (u === 3 && v === 15) {
+                return `M ${x1} ${y1 - 24} L ${x1} 98 L ${x2} 98 L ${x2} ${y2 - 24}`;
+            }
+            if (u === 14 && v === 4) {
+                return `M ${x1} ${y1 + 24} L ${x1} 395 L ${x2} 395 L ${x2} ${y2 + 24}`;
+            }
+
+            // Right mBT Shunt (v23 RSCA -> v25 mBT -> v6 RPA) matching Fig 1b
+            if (u === 23 && v === 25) {
+                return `M ${x1} ${y1 - 24} L ${x1} ${y2} L ${x2 + 26} ${y2}`;
+            }
+            if (u === 25 && v === 6) {
+                return `M ${x1 - 26} ${y1} L ${x2} ${y1} L ${x2} ${y2 - 24}`;
+            }
+
+            // Glenn & Fontan: SVC(1)->RPA(6), IVC(2)->RPA(6)
+            if (u === 1 && v === 6) {
+                return `M ${x1} ${y1 - 24} L ${x1} 90 L ${x2} 90 L ${x2} ${y2 - 24}`;
+            }
+            if (u === 2 && v === 6) {
+                return `M ${x1} ${y1 + 24} L ${x1} 365 L ${x2 - 55} 365 L ${x2 - 55} ${y2} L ${x2 - 25} ${y2}`;
+            }
+
+            // Bidirectional between adjacent nodes
+            const isBidirectional = matrix[v] && matrix[v][u] === 1;
+            const dx = x2 - x1;
+            const dy = y2 - y1;
+            const dist = Math.hypot(dx, dy) || 1;
+            const rStart = u === 24 ? 36 : 24;
+            const rEnd = v === 24 ? 38 : 26;
+
+            if (isBidirectional || dist > 260) {
+                const mx = (x1 + x2) / 2;
+                const my = (y1 + y2) / 2;
+                const nx = -dy / dist;
+                const ny = dx / dist;
+                const curveOffset = isBidirectional ? 22 : 35;
+                const cx = mx + nx * curveOffset;
+                const cy = my + ny * curveOffset;
+
+                const sx = x1 + (dx / dist) * rStart;
+                const sy = y1 + (dy / dist) * rStart;
+                const ex = x2 - (dx / dist) * rEnd;
+                const ey = y2 - (dy / dist) * rEnd;
+                return `M ${sx} ${sy} Q ${cx} ${cy} ${ex} ${ey}`;
+            }
+
+            // Default straight line trimmed by node radius
+            const sx = x1 + (dx / dist) * rStart;
+            const sy = y1 + (dy / dist) * rStart;
+            const ex = x2 - (dx / dist) * rEnd;
+            const ey = y2 - (dy / dist) * rEnd;
+            return `M ${sx} ${sy} L ${ex} ${ey}`;
+        }
+
+        function renderDirectedGraphSVG(v25Meta) {
+            const svg = document.getElementById('chdGraphSvg');
+            const showAnim = document.getElementById('toggleFlowAnim').checked;
+            const showRemoved = document.getElementById('toggleRemovedEdges').checked;
+            const vertices = getVerticesList(v25Meta);
+            const vertexMap = new Map(vertices.map(v => [v.id, v]));
+
+            let html = `
+                <defs>
+                    <marker id="arrow-normal" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                        <path d="M 0 1.5 L 8.5 5 L 0 8.5 z" fill="#94a3b8"/>
+                    </marker>
+                    <marker id="arrow-added" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+                        <path d="M 0 1 L 9 5 L 0 9 z" fill="#f43f5e"/>
+                    </marker>
+                    <marker id="arrow-survival" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+                        <path d="M 0 1 L 9 5 L 0 9 z" fill="#10b981"/>
+                    </marker>
+                    <marker id="arrow-removed" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto-start-reverse">
+                        <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#475569"/>
+                    </marker>
+                </defs>
+            `;
+
+            // Subtle anatomical region background guides
+            html += `
+                <g opacity="0.35">
+                    <rect x="52" y="110" width="395" height="235" rx="16" fill="#0f172a" stroke="#1e3a8a" stroke-dasharray="4 4"/>
+                    <text x="65" y="128" fill="#38bdf8" font-size="10" font-weight="600">Right Heart &amp; Venous Return (右心與肺動脈)</text>
+
+                    <rect x="458" y="100" width="155" height="260" rx="16" fill="#0f172a" stroke="#115e59" stroke-dasharray="4 4"/>
+                    <text x="470" y="118" fill="#2dd4bf" font-size="10" font-weight="600">Lungs &amp; PVs (肺與肺靜脈)</text>
+
+                    <rect x="632" y="90" width="490" height="275" rx="16" fill="#0f172a" stroke="#881337" stroke-dasharray="4 4"/>
+                    <text x="646" y="108" fill="#fb7185" font-size="10" font-weight="600">Left Heart &amp; Aortic Branches (左心與體動脈分支)</text>
+                </g>
+            `;
+
+            // 1. Render Removed Normal Edges (if toggled)
+            if (showRemoved) {
+                for (let r = 1; r <= 24; r++) {
+                    for (let c = 1; c <= 24; c++) {
+                        if (normalMatrix[r][c] === 1 && currentMatrix[r][c] === 0) {
+                            const uNode = vertexMap.get(r);
+                            const vNode = vertexMap.get(c);
+                            if (!uNode || !vNode) continue;
+                            const d = computeEdgePath(uNode, vNode, r, c, currentMatrix);
+                            html += `
+                                <g class="opacity-55">
+                                    <path d="${d}" fill="none" stroke="#475569" stroke-width="1.6" stroke-dasharray="4,4" marker-end="url(#arrow-removed)"/>
+                                </g>
+                            `;
+                        }
+                    }
+                }
+            }
+
+            // 2. Render Active Edges
+            for (let r = 1; r <= currentDimension; r++) {
+                for (let c = 1; c <= currentDimension; c++) {
+                    if (currentMatrix[r][c] === 1) {
+                        const uNode = vertexMap.get(r);
+                        const vNode = vertexMap.get(c);
+                        if (!uNode || !vNode) continue;
+
+                        const isAddedOrModified = (r > 24 || c > 24) || (normalMatrix[r][c] === 0);
+                        const isSurvivalEdge = highlightSurvivalPath && currentSurvivalResult && currentSurvivalResult.edgeSet.has(`${r}->${c}`);
+                        const d = computeEdgePath(uNode, vNode, r, c, currentMatrix);
+
+                        let strokeColor = isAddedOrModified ? '#f43f5e' : '#94a3b8';
+                        let strokeWidth = isAddedOrModified ? '2.4' : '1.75';
+                        let markerId = isAddedOrModified ? 'url(#arrow-added)' : 'url(#arrow-normal)';
+
+                        if (isSurvivalEdge) {
+                            strokeColor = '#10b981';
+                            strokeWidth = '2.8';
+                            markerId = 'url(#arrow-survival)';
+                        }
+
+                        html += `
+                            <g class="edge-group" data-u="${r}" data-v="${c}">
+                                <path d="${d}" fill="none" stroke="${strokeColor}" stroke-width="${strokeWidth}" marker-end="${markerId}" class="edge-normal"/>
+                                ${showAnim ? `<path d="${d}" fill="none" stroke="${isSurvivalEdge ? '#6ee7b7' : (isAddedOrModified ? '#fda4af' : '#e2e8f0')}" stroke-width="${strokeWidth}" class="edge-animated" opacity="0.75"/>` : ''}
+                            </g>
+                        `;
+                    }
+                }
+            }
+
+            // Annotations for VSD / ASD / d-TGA if present
+            if (currentMatrix[4][15] === 1 || currentMatrix[15][4] === 1) {
+                html += `<text x="505" y="408" text-anchor="middle" fill="#fb7185" font-size="12" font-weight="700">VSD (心室中隔缺損 $a_{4,15}, a_{15,4}$)</text>`;
+            }
+            if (currentMatrix[3][14] === 1 || currentMatrix[14][3] === 1) {
+                html += `<text x="420" y="370" text-anchor="middle" fill="#fb7185" font-size="11" font-weight="700">ASD ($a_{3,14}, a_{14,3}$)</text>`;
+            }
+
+            // 3. Render Vertices (v1..v24 + optional v25)
+            const groupStyles = {
+                right: { fill: '#0c4a6e', stroke: '#38bdf8', text: '#e0f2fe' },
+                lung:  { fill: '#134e4a', stroke: '#2dd4bf', text: '#ccfbf1' },
+                left:  { fill: '#881337', stroke: '#fb7185', text: '#ffe4e6' },
+                scto:  { fill: '#3b0764', stroke: '#c084fc', text: '#f3e8ff' },
+                extra: { fill: '#78350f', stroke: '#fbbf24', text: '#fef3c7' }
+            };
+
+            for (const v of vertices) {
+                const st = groupStyles[v.group] || groupStyles.right;
+                const radius = v.id === 24 ? 34 : 22;
+                const isSelected = selectedVertexId === v.id;
+
+                // Check if vertex is isolated (Decreased Vertex category)
+                let isIsolated = true;
+                for (let k = 1; k <= currentDimension; k++) {
+                    if (currentMatrix[v.id][k] === 1 || currentMatrix[k][v.id] === 1) {
+                        isIsolated = false;
+                        break;
+                    }
+                }
+
+                const nodeOpacity = isIsolated ? '0.35' : '1';
+                const labelCode = (v.id === 16 && activeRuleIds.has('truncus')) ? 'Truncus' : v.code;
+
+                html += `
+                    <g class="vertex-node" data-id="${v.id}" opacity="${nodeOpacity}" onclick="selectVertex(${v.id})" onmouseenter="hoverVertex(${v.id})">
+                        ${isSelected ? `<circle cx="${v.x}" cy="${v.y}" r="${radius + 6}" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-dasharray="3,3"/>` : ''}
+                        <circle cx="${v.x}" cy="${v.y}" r="${radius}" fill="${st.fill}" stroke="${st.stroke}" stroke-width="${isSelected ? '3' : '2'}"/>
+                        <text x="${v.x}" y="${v.y - radius - 6}" text-anchor="middle" fill="#94a3b8" font-size="10.5" font-weight="600" class="mono">${v.id}</text>
+                        <text x="${v.x}" y="${v.y + 4}" text-anchor="middle" fill="${st.text}" font-size="${labelCode.length > 5 ? '9.5' : '11.5'}" font-weight="700">${labelCode}</text>
+                    </g>
+                `;
+            }
+
+            svg.innerHTML = html;
+        }
+
+        /***********************************************************************
+         * 9. VERTEX INSPECTOR INTERACTION
+         ***********************************************************************/
+        window.hoverVertex = function(id) {
+            if (selectedVertexId !== null) return;
+            updateInspector(id, false);
+        };
+
+        window.selectVertex = function(id) {
+            if (selectedVertexId === id) {
+                selectedVertexId = null;
+            } else {
+                selectedVertexId = id;
+                updateInspector(id, true);
+            }
+            renderDirectedGraphSVG();
+        };
+
+        function updateInspector(id, locked) {
+            const vertices = getVerticesList();
+            const v = vertices.find(n => n.id === id);
+            if (!v) return;
+
+            const incoming = [];
+            const outgoing = [];
+            for (let k = 1; k <= currentDimension; k++) {
+                const kv = vertices.find(n => n.id === k);
+                if (currentMatrix[k][id] === 1 && kv) incoming.push(`v${k}(${kv.code})`);
+                if (currentMatrix[id][k] === 1 && kv) outgoing.push(`v${k}(${kv.code})`);
+            }
+
+            document.getElementById('inspectorBadge').textContent = `v${v.id} • ${v.code}${locked ? ' (已鎖定)' : ''}`;
+            document.getElementById('inspectorText').innerHTML = `<strong>${v.zh} (${v.name})</strong>`;
+            document.getElementById('inspectorConnections').innerHTML =
+                `流入 In: <span class="text-sky-300">${incoming.length ? incoming.join(', ') : '無 (0)'}</span> ｜ 流出 Out: <span class="text-emerald-300">${outgoing.length ? outgoing.join(', ') : '無 (0)'}</span>`;
+        }
+
+        /***********************************************************************
+         * 10. RENDER BINARY ADJACENCY MATRIX (Matching Figure 2 with Red Boxes)
+         ***********************************************************************/
+        function renderBinaryMatrix() {
+            const container = document.getElementById('binaryMatrixContainer');
+            const vertices = getVerticesList();
+            const dim = currentDimension;
+
+            let diffList = [];
+            let html = `<div class="inline-flex flex-col border border-slate-700 rounded-lg overflow-hidden bg-slate-900">`;
+
+            // Top Header Row
+            html += `<div class="flex border-b border-slate-700 bg-slate-800/90">`;
+            html += `<div class="w-16 h-6 flex items-center justify-center text-[10px] text-slate-400 mono border-r border-slate-700">i \\ j</div>`;
+            for (let c = 1; c <= dim; c++) {
+                const vc = vertices.find(v => v.id === c);
+                html += `<div class="matrix-cell font-semibold text-slate-300 border-r border-slate-800/80 mono" title="v${c}: ${vc ? vc.code : ''}">${c}</div>`;
+            }
+            html += `</div>`;
+
+            // Matrix Rows
+            for (let r = 1; r <= dim; r++) {
+                const vr = vertices.find(v => v.id === r);
+                html += `<div class="flex border-b border-slate-800/60 last:border-b-0">`;
+                // Row Header
+                html += `<div class="w-16 h-6 px-1.5 flex items-center justify-between text-[10px] bg-slate-800/70 border-r border-slate-700 mono" title="${vr ? vr.zh : ''}">
+                    <span class="text-slate-400">${r}</span>
+                    <span class="text-sky-300 font-medium truncate">${vr ? vr.code : ''}</span>
+                </div>`;
+
+                for (let c = 1; c <= dim; c++) {
+                    const val = currentMatrix[r][c];
+                    const normVal = (r <= 24 && c <= 24) ? normalMatrix[r][c] : 0;
+                    const isDiff = (r > 24 || c > 24) ? (val === 1) : (val !== normVal);
+
+                    if (isDiff) {
+                        const vc = vertices.find(v => v.id === c);
+                        diffList.push({ r, c, val, rCode: vr ? vr.code : r, cCode: vc ? vc.code : c });
+                    }
+
+                    // Styling matching Figure 2 (red box on differences)
+                    let cellClasses = 'matrix-cell mono border-r border-slate-800/50 ';
+                    if (isDiff) {
+                        cellClasses += 'bg-rose-500/20 text-rose-300 font-bold ring-2 ring-inset ring-rose-500 z-10 ';
+                    } else if (val === 1) {
+                        cellClasses += 'bg-sky-500/15 text-sky-300 font-semibold ';
+                    } else {
+                        cellClasses += 'text-slate-600 hover:text-slate-300 ';
+                    }
+
+                    html += `<div class="${cellClasses}" onclick="toggleMatrixCell(${r}, ${c})" title="a(${r},${c}) [${vr ? vr.code : r} → ${vertices.find(v => v.id === c)?.code || c}] = ${val} (點擊切換)">${val}</div>`;
+                }
+                html += `</div>`;
+            }
+
+            html += `</div>`;
+            container.innerHTML = html;
+
+            // Update diff count & tags
+            document.getElementById('matrixDiffCount').textContent = `${diffList.length} 處與正常心臟差異 (紅框)`;
+            const tagsContainer = document.getElementById('matrixDiffTags');
+            if (diffList.length === 0) {
+                tagsContainer.innerHTML = `<span class="text-slate-400">與正常心臟二元鄰接矩陣 ($24\\times 24$) 完全相同，無紅框差異項。</span>`;
+            } else {
+                tagsContainer.innerHTML = `<span class="text-slate-400 mr-1">矩陣差異元素:</span>` +
+                    diffList.map(d =>
+                        `<span class="px-2 py-0.5 rounded bg-rose-500/15 border border-rose-500/40 text-rose-300 mono text-[11px]" title="${d.rCode} → ${d.cCode}">
+                            a<sub>${d.r},${d.c}</sub>=${d.val} <span class="text-rose-200/70">(${d.rCode}→${d.cCode})</span>
+                        </span>`
+                    ).join('');
+            }
+        }
+
+        window.toggleMatrixCell = function(r, c) {
+            if (r === c) return; // Self-loop not used
+            const newVal = currentMatrix[r][c] === 1 ? 0 : 1;
+            const existingIdx = customMatrixOverrides.findIndex(o => o.r === r && o.c === c);
+            if (existingIdx >= 0) {
+                customMatrixOverrides[existingIdx].val = newVal;
+            } else {
+                customMatrixOverrides.push({ r, c, val: newVal });
+            }
+            activePresetId = 'custom';
+            recomputeGraphState();
+        };
+
+        /***********************************************************************
+         * 11. RENDER VIABILITY BANNER & HEADER SUMMARY
+         ***********************************************************************/
+        function updateHeaderSummary(v25Meta) {
+            const dimBadge = document.getElementById('matrixDimensionBadge');
+            dimBadge.textContent = `${currentDimension}×${currentDimension} Matrix`;
+
+            const titleEl = document.getElementById('currentDiagnosisTitle');
+            const descEl = document.getElementById('currentDiagnosisDesc');
+
+            const preset = PAPER_PRESETS.find(p => p.id === activePresetId);
+            if (preset) {
+                titleEl.textContent = preset.title;
+                descEl.innerHTML = preset.desc;
+            } else {
+                const activeNames = MODULAR_RULES.filter(r => activeRuleIds.has(r.id)).map(r => r.name.split(' ')[0]);
+                if (activeNames.length === 0 && customMatrixOverrides.length === 0) {
+                    titleEl.textContent = 'Normal Heart (正常心臟結構)';
+                    descEl.textContent = PAPER_PRESETS[0].desc;
+                } else {
+                    const label = activeNames.length > 0 ? activeNames.join(' + ') : '自訂鄰接矩陣拓撲';
+                    titleEl.textContent = `Custom CHD: ${label}${customMatrixOverrides.length ? ` (+${customMatrixOverrides.length} 手動微調)` : ''}`;
+                    descEl.textContent = `已套用 ${activeRuleIds.size} 項模組化 CHD 規則與 ${customMatrixOverrides.length} 項矩陣手動修改。${v25Meta ? `包含擴充節點 v25 (${v25Meta.zh})。` : ''}`;
+                }
+            }
+        }
+
+        function renderViabilityBanner() {
+            const card = document.getElementById('viabilityCard');
+            const res = currentSurvivalResult;
+            const vertices = getVerticesList();
+            const codeOf = (id) => vertices.find(v => v.id === id)?.code || `v${id}`;
+
+            if (res.viable) {
+                const p1 = res.pathToLung.map(codeOf).join(' → ');
+                const p2 = res.pathFromLungToAAo.map(codeOf).join(' → ');
+                card.className = 'w-full md:w-auto min-w-[320px] rounded-xl p-3 border bg-emerald-950/40 border-emerald-500/40';
+                card.innerHTML = `
+                    <div class="flex items-center justify-between gap-2 mb-1">
+                        <span class="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
+                            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                            符合生理存活條件 (Compatible with Life)
+                        </span>
+                        <span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-200 mono">Lung v${res.lungId}</span>
+                    </div>
+                    <div class="text-[11px] text-slate-300 mono space-y-0.5">
+                        <div class="truncate" title="${p1}">靜脈→肺: <span class="text-sky-300">${p1}</span></div>
+                        <div class="truncate" title="${p2}">肺→主動脈: <span class="text-rose-300">${p2}</span></div>
+                    </div>
+                `;
+            } else {
+                card.className = 'w-full md:w-auto min-w-[320px] rounded-xl p-3 border bg-rose-950/50 border-rose-500/50';
+                card.innerHTML = `
+                    <div class="flex items-center justify-between gap-2 mb-1">
+                        <span class="text-xs font-bold text-rose-300 flex items-center gap-1.5">
+                            <span class="w-2 h-2 rounded-full bg-rose-500 animate-ping"></span>
+                            不符合存活條件 (Incompatible with Life)
+                        </span>
+                        <button onclick="quickFixViability()" class="text-[11px] px-2 py-0.5 rounded bg-rose-500 hover:bg-rose-400 text-white font-medium transition">
+                            + 加入 VSD 分流
+                        </button>
+                    </div>
+                    <p class="text-[11px] text-rose-200/90 leading-snug">${res.reason}</p>
+                `;
+            }
+        }
+
+        window.quickFixViability = function() {
+            activeRuleIds.add('vsd');
+            if (activeRuleIds.has('pulmonary_atresia') && !activeRuleIds.has('rmbt') && !activeRuleIds.has('pda')) {
+                activeRuleIds.add('rmbt');
+            }
+            activePresetId = 'custom';
+            recomputeGraphState();
+        };
+
+        /***********************************************************************
+         * 12. RENDER SIDEBAR PRESETS & MODULAR RULES
+         ***********************************************************************/
+        function renderPresetButtons() {
+            const container = document.getElementById('presetButtonsContainer');
+            container.innerHTML = PAPER_PRESETS.map(p => {
+                const isActive = activePresetId === p.id;
+                return `
+                    <button
+                        onclick="applyPreset('${p.id}')"
+                        class="w-full text-left px-3 py-2 rounded-xl border transition flex items-center justify-between gap-2 ${
+                            isActive
+                                ? 'bg-sky-500/20 border-sky-500 text-white shadow-sm'
+                                : 'bg-slate-800/60 hover:bg-slate-800 border-slate-700/80 text-slate-300'
+                        }"
+                    >
+                        <div class="min-w-0">
+                            <div class="text-xs font-semibold truncate">${p.title}</div>
+                        </div>
+                        <span class="shrink-0 text-[10px] px-2 py-0.5 rounded bg-slate-900/90 text-sky-300 border border-slate-700 mono">${p.badge}</span>
+                    </button>
+                `;
+            }).join('');
+        }
+
+        window.applyPreset = function(presetId) {
+            const preset = PAPER_PRESETS.find(p => p.id === presetId);
+            if (!preset) return;
+            activePresetId = presetId;
+            activeRuleIds = new Set(preset.rules);
+            customMatrixOverrides = [];
+            if (preset.mriKey) {
+                document.getElementById('mriPresetSelect').value = preset.mriKey;
+                renderMriWeightedMatrix(preset.mriKey);
+            }
+            recomputeGraphState();
+        };
+
+        function renderRuleCheckboxes() {
+            const container = document.getElementById('modularRulesContainer');
+            document.getElementById('activeRulesCount').textContent = `${activeRuleIds.size} 項啟用`;
+
+            // Group by category
+            const grouped = {};
+            for (const rule of MODULAR_RULES) {
+                if (!grouped[rule.category]) grouped[rule.category] = [];
+                grouped[rule.category].push(rule);
+            }
+
+            let html = '';
+            for (const [category, rules] of Object.entries(grouped)) {
+                html += `
+                    <div class="space-y-1.5">
+                        <div class="text-[11px] font-semibold text-sky-400/90 uppercase tracking-wider px-1">${category}</div>
+                        <div class="space-y-1">
+                            ${rules.map(r => {
+                                const checked = activeRuleIds.has(r.id);
+                                return `
+                                    <label class="flex items-start gap-2.5 p-2 rounded-xl border cursor-pointer transition select-none ${
+                                        checked
+                                            ? 'bg-rose-500/15 border-rose-500/50 text-white'
+                                            : 'bg-slate-800/40 hover:bg-slate-800/80 border-slate-800 text-slate-300'
+                                    }">
+                                        <input
+                                            type="checkbox"
+                                            ${checked ? 'checked' : ''}
+                                            onchange="toggleRule('${r.id}')"
+                                            class="mt-0.5 rounded text-rose-500 focus:ring-0 bg-slate-900 border-slate-600"
+                                        >
+                                        <div class="min-w-0 flex-1">
+                                            <div class="text-xs font-medium leading-tight">${r.name}</div>
+                                            <div class="text-[10px] text-slate-400 mono mt-0.5 truncate">${r.formula.replace(/\$/g, '').replace(/\\text\{([^}]+)\}/g, '$1')}</div>
+                                        </div>
+                                    </label>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+            container.innerHTML = html;
+        }
+
+        window.toggleRule = function(ruleId) {
+            if (activeRuleIds.has(ruleId)) {
+                activeRuleIds.delete(ruleId);
+            } else {
+                // Ensure only one v25 rule is active at a time for clean v25 assignment
+                const clickedRule = MODULAR_RULES.find(r => r.id === ruleId);
+                if (clickedRule && clickedRule.v25) {
+                    for (const r of MODULAR_RULES) {
+                        if (r.v25 && r.id !== ruleId) activeRuleIds.delete(r.id);
+                    }
+                }
+                activeRuleIds.add(ruleId);
+            }
+            activePresetId = 'custom';
+            recomputeGraphState();
+        };
+
+        /***********************************************************************
+         * 13. RENDER 4D FLOW MRI WEIGHTED SUBMATRIX (Fig. 3 & Fig. 4)
+         ***********************************************************************/
+        function renderMriWeightedMatrix(key) {
+            const data = MRI_DATASETS[key] || MRI_DATASETS.repaired_tof;
+            const content = document.getElementById('mriMatrixContent');
+            document.getElementById('mriDescription').textContent = data.note;
+
+            const n = data.nodes.length;
+            let html = `
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center bg-slate-950 p-3 rounded-xl border border-slate-800">
+                    <!-- Submatrix Binary Indicator -->
+                    <div>
+                        <div class="text-[11px] text-slate-400 mb-1.5 font-medium">1. 局部二元子矩陣 (Binary Submatrix)</div>
+                        <table class="w-full text-center mono text-xs border-collapse">
+                            <thead>
+                                <tr class="text-slate-400 border-b border-slate-800">
+                                    <th class="py-1"></th>
+                                    ${data.nodes.map(nd => `<th class="py-1 text-sky-300">${nd.code}</th>`).join('')}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${data.nodes.map((rNode, rIdx) => `
+                                    <tr class="border-b border-slate-800/60 last:border-0">
+                                        <td class="py-1.5 font-semibold text-sky-300">${rNode.code}</td>
+                                        ${data.nodes.map((cNode, cIdx) => {
+                                            const w = data.weights[rIdx][cIdx];
+                                            const bVal = w > 0 ? 1 : 0;
+                                            return `<td class="py-1.5 ${bVal ? 'text-white font-bold bg-sky-500/15' : 'text-slate-600'}">${bVal}</td>`;
+                                        }).join('')}
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Weighted Peak Velocity Matrix -->
+                    <div>
+                        <div class="text-[11px] text-slate-400 mb-1.5 font-medium">2. 峰值流速加權矩陣 (Peak Velocity, cm/s)</div>
+                        <table class="w-full text-center mono text-xs border-collapse">
+                            <thead>
+                                <tr class="text-slate-400 border-b border-slate-800">
+                                    <th class="py-1"></th>
+                                    ${data.nodes.map(nd => `<th class="py-1 text-emerald-300">${nd.code}</th>`).join('')}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${data.nodes.map((rNode, rIdx) => `
+                                    <tr class="border-b border-slate-800/60 last:border-0">
+                                        <td class="py-1.5 font-semibold text-emerald-300">${rNode.code}</td>
+                                        ${data.nodes.map((cNode, cIdx) => {
+                                            const w = data.weights[rIdx][cIdx];
+                                            const isHigh = w >= 180;
+                                            return `<td class="py-1.5 ${
+                                                w === 0
+                                                    ? 'text-slate-600'
+                                                    : (isHigh ? 'text-amber-300 font-bold bg-amber-500/20 rounded' : 'text-emerald-300 font-bold bg-emerald-500/15 rounded')
+                                            }">${w === 0 ? '0' : w.toFixed(1)}</td>`;
+                                        }).join('')}
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+            content.innerHTML = html;
+        }
+
+        /***********************************************************************
+         * 14. NATURAL LANGUAGE / DIAGNOSIS PARSER
+         ***********************************************************************/
+        function parseDiagnosisQuery(rawQuery) {
+            const q = rawQuery.trim().toLowerCase();
+            if (!q) return;
+
+            // Check direct preset match first
+            if (q === 'normal' || q.includes('正常')) {
+                applyPreset('normal');
+                return;
+            }
+            if ((q.includes('extreme tof') || q.includes('極端')) && (q.includes('mbt') || q.includes('bt'))) {
+                applyPreset('extreme_tof_mbt');
+                return;
+            }
+            if (q.includes('fontan') && !q.includes('+')) {
+                applyPreset('fontan_circ');
+                return;
+            }
+
+            const matched = new Set();
+
+            if (q.includes('tof') || q.includes('tetralogy') || q.includes('法洛')) {
+                matched.add('vsd');
+                if (q.includes('extreme') || q.includes('atresia') || q.includes('閉鎖') || q.includes('mbt')) {
+                    matched.add('pulmonary_atresia');
+                    matched.add('rmbt');
+                }
+            }
+            if (q.includes('l-tga') || q.includes('ltga') || q.includes('cc-tga') || q.includes('左旋')) {
+                matched.add('ltga');
+            } else if (q.includes('tga') || q.includes('大血管轉位') || q.includes('大動脈轉位')) {
+                matched.add('dtga');
+            }
+
+            if (q.includes('vsd') || q.includes('心室中隔缺損')) matched.add('vsd');
+            if (q.includes('asd') || q.includes('心房中隔缺損')) matched.add('asd');
+            if (q.includes('pda') || q.includes('開放性動脈導管')) matched.add('pda');
+            if (q.includes('mapca') || q.includes('側支')) matched.add('mapca');
+            if (q.includes('plsvc') || q.includes('左上腔')) matched.add('plsvc');
+            if (q.includes('dorv') || q.includes('雙出口')) matched.add('dorv');
+            if (q.includes('truncus') || q.includes('永存動脈幹')) matched.add('truncus');
+            if (q.includes('tricuspid atresia') || q.includes('三尖瓣閉鎖')) matched.add('tricuspid_atresia');
+            if (q.includes('pulmonary atresia') || q.includes('肺動脈閉鎖') || q.includes('肺動脈瓣閉鎖')) matched.add('pulmonary_atresia');
+            if (q.includes('ap window') || q.includes('主肺動脈窗')) matched.add('ap_window');
+            if (q.includes('papvr') || q.includes('tapvr') || q.includes('肺靜脈回流')) matched.add('papvr');
+            if (q.includes('norwood') || q.includes('諾伍德')) matched.add('norwood_rmbt');
+            if (q.includes('glenn')) matched.add('glenn');
+            if (q.includes('fontan')) matched.add('fontan');
+            if (q.includes('switch') || q.includes('aso')) matched.add('arterial_switch');
+            if (q.includes('left mbt') || q.includes('l-mbt') || q.includes('左mbt')) {
+                matched.add('lmbt');
+            } else if (q.includes('mbt') || q.includes('bt shunt') || q.includes('分流')) {
+                matched.add('rmbt');
+            }
+
+            if (matched.size > 0) {
+                activeRuleIds = matched;
+                activePresetId = 'custom';
+                customMatrixOverrides = [];
+                recomputeGraphState();
+            } else {
+                // Default fallback if unrecognized: show gentle notice in inspector
+                document.getElementById('inspectorBadge').textContent = '診斷解析提示';
+                document.getElementById('inspectorText').innerHTML =
+                    `未能從「<span class="text-rose-300">${rawQuery}</span>」識別出已知代碼。請嘗試輸入如 <span class="text-sky-300 mono">Extreme TOF + mBT</span>、<span class="text-sky-300 mono">d-TGA + VSD</span>、<span class="text-sky-300 mono">DORV + PDA</span>、<span class="text-sky-300 mono">Fontan</span> 或由左側勾選。`;
+            }
+        }
+
+        /***********************************************************************
+         * 15. RENDER VERTEX DICTIONARY & INITIALIZE EVENTS
+         ***********************************************************************/
+        function renderVertexDictionary() {
+            const container = document.getElementById('vertexDictContainer');
+            container.innerHTML = BASE_VERTICES.map(v => `
+                <button
+                    onclick="selectVertex(${v.id})"
+                    class="text-left px-2 py-1 rounded-lg bg-slate-800/50 hover:bg-slate-800 border border-slate-800 transition flex items-center gap-1.5"
+                >
+                    <span class="mono text-sky-400 font-semibold">v${v.id}</span>
+                    <span class="font-medium text-slate-200">${v.code}</span>
+                    <span class="text-slate-400 truncate text-[10px]">${v.zh}</span>
+                </button>
+            `).join('');
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            initNormalMatrix();
+            renderVertexDictionary();
+            renderMriWeightedMatrix('repaired_tof');
+            recomputeGraphState();
+
+            // Form submit
+            document.getElementById('diagnosisForm').addEventListener('submit', (e) => {
+                e.preventDefault();
+                const val = document.getElementById('diagnosisInput').value;
+                parseDiagnosisQuery(val);
+            });
+
+            // Reset Normal button
+            document.getElementById('btnResetNormal').addEventListener('click', () => {
+                document.getElementById('diagnosisInput').value = '';
+                highlightSurvivalPath = false;
+                applyPreset('normal');
+            });
+
+            // Graph controls
+            document.getElementById('toggleFlowAnim').addEventListener('change', () => renderDirectedGraphSVG());
+            document.getElementById('toggleRemovedEdges').addEventListener('change', () => renderDirectedGraphSVG());
+            document.getElementById('btnHighlightSurvivalPath').addEventListener('click', () => {
+                highlightSurvivalPath = !highlightSurvivalPath;
+                const btn = document.getElementById('btnHighlightSurvivalPath');
+                if (highlightSurvivalPath) {
+                    btn.classList.replace('bg-emerald-500/15', 'bg-emerald-500');
+                    btn.classList.replace('text-emerald-300', 'text-slate-950');
+                } else {
+                    btn.classList.replace('bg-emerald-500', 'bg-emerald-500/15');
+                    btn.classList.replace('text-slate-950', 'text-emerald-300');
+                }
+                renderDirectedGraphSVG();
+            });
+
+            // MRI Select
+            document.getElementById('mriPresetSelect').addEventListener('change', (e) => {
+                renderMriWeightedMatrix(e.target.value);
+            });
+
+            // Modal events
+            const modal = document.getElementById('paperModal');
+            document.getElementById('btnPaperModal').addEventListener('click', () => {
+                modal.classList.remove('hidden');
+                modal.classList.add('flex');
+            });
+            document.getElementById('btnCloseModal').addEventListener('click', () => {
+                modal.classList.add('hidden');
+                modal.classList.remove('flex');
+            });
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.classList.add('hidden');
+                    modal.classList.remove('flex');
+                }
+            });
+        });
+    </script>
+</body>
+</html>
